@@ -1,9 +1,10 @@
 Name:       audio-session-manager
 Summary:    Audio Session Manager
-Version:    0.2.6
+Version:    0.2.7
 Release:    0
-Group:      TO_BE/FILLED_IN
-License:    TO BE FILLED IN
+Group:      System/Libraries
+License:    Apache License, Version 2.0
+URL:        http://source.tizen.org
 Source0:    %{name}-%{version}.tar.gz
 Requires(post): /sbin/ldconfig
 Requires(post): /usr/bin/vconftool
