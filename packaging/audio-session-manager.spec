@@ -54,6 +54,8 @@ make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}/usr/share/license
+cp LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
 %make_install
 
 
@@ -71,6 +73,7 @@ vconftool set -t int memory/Sound/SoundStatus "0" -g 29 -f -i
 %defattr(-,root,root,-)
 %{_libdir}/libaudio-session-mgr.so.*
 %{_bindir}/asm_testsuite
+/usr/share/license/%{name}
 
 %files devel
 %defattr(-,root,root,-)
