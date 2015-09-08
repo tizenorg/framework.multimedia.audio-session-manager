@@ -14,41 +14,21 @@ AC_PROG_MAKE_SET
 AC_PROG_LIBTOOL
 
 # Checks for libraries.
-PKG_CHECK_MODULES(AUDIOSESSIONMGR, glib-2.0 vconf )
+PKG_CHECK_MODULES(AUDIOSESSIONMGR, glib-2.0 gthread-2.0)
 AC_SUBST(AUDIOSESSIONMGR_CFLAGS)
 AC_SUBST(AUDIOSESSIONMGR_LIBS)
+
+PKG_CHECK_MODULES(MMLOG, mm-common)
+AC_SUBST(MMCOMMON_CFLAGS)
+AC_SUBST(MMCOMMON_LIBS)
 
 PKG_CHECK_MODULES(MMLOG, mm-log)
 AC_SUBST(MMLOG_CFLAGS)
 AC_SUBST(MMLOG_LIBS)
 
-PKG_CHECK_MODULES(SYSMAN, sysman)
-AC_SUBST(SYSMAN_CFLAGS)
-AC_SUBST(SYSMAN_LIBS)
-
-PKG_CHECK_MODULES(AVSYSAUDIO, avsysaudio)
-AC_SUBST(AVSYSAUDIO_CFLAGS)
-AC_SUBST(AVSYSAUDIO_LIBS)
-
-dnl use security --------------------------------------------------------------------------
-AC_ARG_ENABLE(security, AC_HELP_STRING([--enable-security], [using security]),
-[
- case "${enableval}" in
-	 yes) USE_SECURITY=yes ;;
-	 no)  USE_SECURITY=no ;;
-	 *)   AC_MSG_ERROR(bad value ${enableval} for --enable-security) ;;
- esac
- ],[USE_SECURITY=no])
-
-if test "x$USE_SECURITY" = "xyes"; then
-	PKG_CHECK_MODULES(SECURITY, security-server)
-	AC_SUBST(SECURITY_CFLAGS)
-	AC_SUBST(SECURITY_LIBS)
-fi
-AM_CONDITIONAL(USE_SECURITY, test "x$USE_SECURITY" = "xyes")
-dnl end --------------------------------------------------------------------
-
-
+PKG_CHECK_MODULES(VCONF, vconf)
+AC_SUBST(VCONF_CFLAGS)
+AC_SUBST(VCONF_LIBS)
 
 # Checks for header files.
 AC_HEADER_STDC
@@ -64,6 +44,7 @@ AC_FUNC_MALLOC
 AC_CHECK_FUNCS([memset])
 
 AC_CONFIG_FILES([Makefile
+		 test/Makefile
 		 audio-session-mgr.pc
 		 ])
 AC_OUTPUT

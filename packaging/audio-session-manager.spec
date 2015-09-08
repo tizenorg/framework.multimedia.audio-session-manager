@@ -1,24 +1,20 @@
 Name:       audio-session-manager
 Summary:    Audio Session Manager
-Version: 0.2.0
-Release:    1
-Group:      TO_BE/FILLED_IN
-License:    TO BE FILLED IN
+Version:    0.4.8
+Release:    0
+Group:      System/Libraries
+License:    Apache-2.0
+URL:        http://source.tizen.org
 Source0:    %{name}-%{version}.tar.gz
 Requires(post): /sbin/ldconfig
 Requires(post): /usr/bin/vconftool
 Requires(postun): /sbin/ldconfig
 BuildRequires:  pkgconfig(glib-2.0)
-BuildRequires:  pkgconfig(mm-log)
-BuildRequires:  pkgconfig(sysman)
+BuildRequires:  pkgconfig(mm-common)
 BuildRequires:  pkgconfig(vconf)
-BuildRequires:  pkgconfig(avsysaudio)
-BuildRequires:  pkgconfig(security-server)
-
 
 %description
 audio-session-manager development package 
-
 
 
 %package devel
@@ -48,7 +44,7 @@ auido-session-manager development package for sdk release for audio-session
 %autogen --disable-static --noconfigure
 LDFLAGS="$LDFLAGS -Wl,--rpath=%{prefix}/lib -Wl,--hash-style=both -Wl,--as-needed "; export LDFLAGS
 CFLAGS="%{optflags} -fvisibility=hidden -DMM_DEBUG_FLAG -DEXPORT_API=\"__attribute__((visibility(\\\"default\\\")))\"" ; export CFLAGS
-%configure --disable-static --enable-security
+%configure --disable-static --disable-security
 make %{?jobs:-j%jobs}
 
 %install
@@ -60,14 +56,16 @@ rm -rf %{buildroot}
 %post 
 /sbin/ldconfig
 
-vconftool set -t int memory/Sound/SoundStatus "0" -i
+vconftool set -t int memory/Sound/SoundStatus "0" -i -s system::vconf_multimedia
 
 %postun 
 /sbin/ldconfig
 
 %files
+%manifest audio-session-manager.manifest
 %defattr(-,root,root,-)
 %{_libdir}/libaudio-session-mgr.so.*
+%{_bindir}/asm_testsuite
 
 %files devel
 %defattr(-,root,root,-)
