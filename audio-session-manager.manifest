@@ -2,10 +2,7 @@
 	<request>
 		<domain name="_" />
 	</request>
-	<define>
-		<domain name="audio-session-manager" />
-	</define>
 	<assign>
-		<filesystem path="/usr/bin/asm_testsuite" exec_label="none" />
+		<filesystem path="/usr/bin/asm_testsuite" label="_" exec_label="none" />
 	</assign>
 </manifest>

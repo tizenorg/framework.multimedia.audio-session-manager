@@ -1,9 +1,9 @@
 /*
  * audio-session-manager
  *
- * Copyright (c) 2000 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2015 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Seungbae Shin <seungbae.shin at samsung.com>, Sangchul Lee <sc11.lee at samsung.com>
+ * Contact: Sangchul Lee <sc11.lee at samsung.com>, Inhyeok Kim <i_bc.kim at samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,10 +63,6 @@ int asm_register_instance_id;
 int asm_snd_msgid;
 int asm_rcv_msgid;
 int asm_cb_msgid;
-
-ASM_msg_lib_to_asm_t asm_snd_msg;
-ASM_msg_asm_to_lib_t asm_rcv_msg;
-ASM_msg_asm_to_cb_t asm_cb_msg;
 
 ASM_sound_cb_t 	asm_callback;
 
@@ -482,9 +478,6 @@ init_handle:
 
 	if (ASM_sound_handle[index].asm_src) {
 		g_source_destroy(ASM_sound_handle[index].asm_src);
-		if (!g_source_is_destroyed (ASM_sound_handle[index].asm_src)) {
-			debug_warning(" failed to g_source_destroy(), asm_src(0x%p)", ASM_sound_handle[index].asm_src);
-		}
 	}
 	debug_log(" g_free : g_src_funcs(%#X), g_poll_fd(%#X)", g_src_funcs, g_poll_fd);
 
@@ -703,19 +696,19 @@ void __ASM_close_callback(int index)
 
 }
 
-bool __asm_construct_snd_msg(int asm_pid, int handle, ASM_sound_events_t sound_event,
+bool __asm_construct_snd_msg(ASM_msg_lib_to_asm_t *asm_snd_msg, int asm_pid, int handle, ASM_sound_events_t sound_event,
 					ASM_requests_t request_id, ASM_sound_states_t sound_state, ASM_resource_t resource, int *error_code)
 {
-	asm_snd_msg.instance_id = asm_pid;
+	asm_snd_msg->msg_id = asm_pid;
 
-	asm_snd_msg.data.handle = handle;
-	asm_snd_msg.data.request_id = request_id;
-	asm_snd_msg.data.sound_event = sound_event;
-	asm_snd_msg.data.sound_state = sound_state;
-	asm_snd_msg.data.system_resource = resource;
+	asm_snd_msg->data.handle = handle;
+	asm_snd_msg->data.request_id = request_id;
+	asm_snd_msg->data.sound_event = sound_event;
+	asm_snd_msg->data.sound_state = sound_state;
+	asm_snd_msg->data.system_resource = resource;
 
-	debug_msg("tid=%ld,handle=%d,req=%d,evt=%d,state=%d,resource=%d,instance_id=%ld", asm_snd_msg.instance_id, asm_snd_msg.data.handle,
-				asm_snd_msg.data.request_id, asm_snd_msg.data.sound_event, asm_snd_msg.data.sound_state, asm_snd_msg.data.system_resource, asm_snd_msg.instance_id);
+	debug_msg("tid=%ld,handle=%d,req=%d,evt=%d,state=%d,resource=%d", asm_snd_msg->msg_id, asm_snd_msg->data.handle,
+				asm_snd_msg->data.request_id, asm_snd_msg->data.sound_event, asm_snd_msg->data.sound_state, asm_snd_msg->data.system_resource);
 
 	return true;
 }
@@ -787,6 +780,8 @@ bool ASM_register_sound_ex (const int application_pid, int *asm_handle, ASM_soun
 	int asm_pid = 0;
 	int index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -854,7 +849,7 @@ bool ASM_register_sound_ex (const int application_pid, int *asm_handle, ASM_soun
 	handle = -1; /* for register & get handle from server */
 
 	/* Construct msg to send -> send msg -> recv msg */
-	if (!__asm_construct_snd_msg(asm_pid, handle, sound_event, ASM_REQUEST_REGISTER, sound_state, mm_resource, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, asm_pid, handle, sound_event, ASM_REQUEST_REGISTER, sound_state, mm_resource, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -864,15 +859,19 @@ bool ASM_register_sound_ex (const int application_pid, int *asm_handle, ASM_soun
 	} else	{
 		NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 		if (ret == -1) {
+			char str_error[256];
 			*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-			debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+			strerror_r(errno, str_error, sizeof(str_error));
+			debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 			return false;
 		}
 
 		NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[index].asm_tid, 0));
 		if (ret == -1) {
+			char str_error[256];
 			*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-			debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+			strerror_r(errno, str_error, sizeof(str_error));
+			debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 			return false;
 		}
 
@@ -928,10 +927,10 @@ bool ASM_register_sound_ex (const int application_pid, int *asm_handle, ASM_soun
 				debug_error("failed to __ASM_get_sound_state(), error(%d)", *error_code);
 			}
 
-			debug_msg("Callback : TID(%ld), handle(%d), command(%d)", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle, asm_rcv_msg.data.result_sound_command);
+			debug_msg("Callback : TID(%ld), handle(%d), command(%d)", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle, asm_rcv_msg.data.result_sound_command);
 			action_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 			if (action_index == -1) {
-				debug_error("Can not find index of instance %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+				debug_error("Can not find index of instance %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 			} else {
 				if (ASM_sound_handle[action_index].asm_callback!=NULL) {
 					ASM_sound_handle[action_index].asm_callback(asm_rcv_msg.data.cmd_handle, ASM_sound_handle[action_index].sound_event, asm_rcv_msg.data.result_sound_command, rcv_sound_status_value, ASM_sound_handle[action_index].user_data);
@@ -1022,6 +1021,8 @@ bool ASM_unregister_sound_ex(const int asm_handle, ASM_sound_events_t sound_even
 	int handle=0;
 	int asm_index = -1;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1053,7 +1054,7 @@ bool ASM_unregister_sound_ex(const int asm_handle, ASM_sound_events_t sound_even
 	debug_msg("<<<< Event(%s), Tid(%d), Handle(%d) Index(%d)",
 				ASM_sound_events_str[sound_event], ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, asm_index);
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, handle, sound_event, ASM_REQUEST_UNREGISTER, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, handle, sound_event, ASM_REQUEST_UNREGISTER, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1115,6 +1116,8 @@ bool ASM_set_watch_session (const int application_pid,	ASM_sound_events_t intere
 	int asm_pid = 0;
 	int index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1185,22 +1188,26 @@ bool ASM_set_watch_session (const int application_pid,	ASM_sound_events_t intere
 	handle = -1; /* for register & get handle from server */
 
 	/* Construct msg to send -> send msg -> recv msg */
-	if (!__asm_construct_snd_msg(asm_pid, handle, interest_sound_event, ASM_REQUEST_REGISTER_WATCHER, interest_sound_state, ASM_RESOURCE_NONE, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, asm_pid, handle, interest_sound_event, ASM_REQUEST_REGISTER_WATCHER, interest_sound_state, ASM_RESOURCE_NONE, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
 	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[index].asm_tid, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 	if (asm_rcv_msg.data.source_request_id != ASM_REQUEST_REGISTER_WATCHER) {
@@ -1251,6 +1258,7 @@ bool ASM_unset_watch_session (ASM_sound_events_t interest_sound_event, ASM_sound
 	int asm_pid = 0;
 	int index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
 
 	debug_fenter();
 
@@ -1296,7 +1304,7 @@ bool ASM_unset_watch_session (ASM_sound_events_t interest_sound_event, ASM_sound
 	asm_pid = ASM_sound_handle[index].asm_tid;
 
 	/* Construct msg to send -> send msg */
-	if (!__asm_construct_snd_msg(asm_pid, handle, interest_sound_event, ASM_REQUEST_UNREGISTER_WATCHER, interest_sound_state, ASM_RESOURCE_NONE, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, asm_pid, handle, interest_sound_event, ASM_REQUEST_UNREGISTER_WATCHER, interest_sound_state, ASM_RESOURCE_NONE, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1307,8 +1315,10 @@ bool ASM_unset_watch_session (ASM_sound_events_t interest_sound_event, ASM_sound
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		if (ASM_sound_handle[index].asm_lock) {
 			g_mutex_unlock(ASM_sound_handle[index].asm_lock);
 		}
@@ -1362,6 +1372,8 @@ bool ASM_get_process_session_state(const int asm_handle, ASM_sound_states_t *sou
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	if (sound_state == NULL || error_code == NULL) {
 		if (error_code)
@@ -1380,7 +1392,7 @@ bool ASM_get_process_session_state(const int asm_handle, ASM_sound_states_t *sou
 
 	debug_msg("Pid(%d)", ASM_sound_handle[asm_index].asm_tid);
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, handle, ASM_EVENT_MONITOR, ASM_REQUEST_GETMYSTATE, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, handle, ASM_EVENT_MONITOR, ASM_REQUEST_GETMYSTATE, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1388,15 +1400,19 @@ bool ASM_get_process_session_state(const int asm_handle, ASM_sound_states_t *sou
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1454,6 +1470,8 @@ bool ASM_get_sound_state(const int asm_handle, ASM_sound_events_t sound_event, A
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	if (sound_state == NULL || error_code == NULL) {
 		if (error_code)
@@ -1476,22 +1494,26 @@ bool ASM_get_sound_state(const int asm_handle, ASM_sound_events_t sound_event, A
 	debug_msg("<<<< Event(%s), Tid(%d), handle(%d)",
 			ASM_sound_events_str[sound_event], ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle);
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, handle, sound_event, ASM_REQUEST_GETSTATE, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, handle, sound_event, ASM_REQUEST_GETSTATE, ASM_STATE_NONE, ASM_RESOURCE_NONE, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1515,6 +1537,8 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1546,7 +1570,7 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 	debug_msg("<<<< Event(%s), State(%s), Tid(%d), handle(%d)",
 				ASM_sound_events_str[sound_event], ASM_sound_state_str[sound_state], ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle);
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, sound_event, ASM_REQUEST_SETSTATE, sound_state, mm_resource, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, sound_event, ASM_REQUEST_SETSTATE, sound_state, mm_resource, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1558,8 +1582,10 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 	} else {
 		NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 		if (ret == -1) {
+			char str_error[256];
 			*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-			debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+			strerror_r(errno, str_error, sizeof(str_error));
+			debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 			return false;
 		}
 	}
@@ -1567,10 +1593,12 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 	if (sound_state == ASM_STATE_PLAYING ) {
 		debug_log( "sound_state is PLAYING, func(0x%x)", func);
 		if (func == NULL) {
-			NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+			NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 			if (ret == -1) {
+				char str_error[256];
 				*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-				debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+				strerror_r(errno, str_error, sizeof(str_error));
+				debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 				return false;
 			}
 
@@ -1593,7 +1621,7 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 				asm_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 				if (asm_index == -1) {
 					*error_code = ERR_ASM_LOCAL_HANDLE_IS_INVALID;
-					debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+					debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 					return false;
 				}
 
@@ -1615,12 +1643,12 @@ bool ASM_set_sound_state_ex (const int asm_handle, ASM_sound_events_t sound_even
 					debug_error("failed to __ASM_get_sound_state(), error(%d)", *error_code);
 				}
 
-				debug_msg("[ASM_CB] Callback : TID(%ld), handle(%d)", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+				debug_msg("[ASM_CB] Callback : TID(%ld), handle(%d)", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 
 				asm_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 				if (asm_index == -1) {
 					*error_code = ERR_ASM_LOCAL_HANDLE_IS_INVALID;
-					debug_error("Can not find index from instance_id %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+					debug_error("Can not find index from instance_id %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 					return false;
 				}
 
@@ -1661,6 +1689,8 @@ bool ASM_set_subsession (const int asm_handle, ASM_sound_sub_sessions_t subsessi
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1689,7 +1719,7 @@ bool ASM_set_subsession (const int asm_handle, ASM_sound_sub_sessions_t subsessi
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subsession, ASM_REQUEST_SET_SUBSESSION, ASM_sound_handle[asm_index].sound_state, resource, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subsession, ASM_REQUEST_SET_SUBSESSION, ASM_sound_handle[asm_index].sound_state, resource, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1697,15 +1727,19 @@ bool ASM_set_subsession (const int asm_handle, ASM_sound_sub_sessions_t subsessi
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1746,6 +1780,8 @@ bool ASM_get_subsession (const int asm_handle, ASM_sound_sub_sessions_t *subsess
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1774,7 +1810,7 @@ bool ASM_get_subsession (const int asm_handle, ASM_sound_sub_sessions_t *subsess
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SUBSESSION, 0, 0, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SUBSESSION, 0, 0, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1782,15 +1818,19 @@ bool ASM_get_subsession (const int asm_handle, ASM_sound_sub_sessions_t *subsess
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1815,6 +1855,8 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 	int asm_index = 0;
 	int ret = 0;
 	ASM_sound_states_t sound_state = ASM_STATE_NONE;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1845,13 +1887,13 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 
 	if (subevent == ASM_SUB_EVENT_NONE) {
 		sound_state = ASM_STATE_STOP;
-		if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subevent, ASM_REQUEST_SET_SUBEVENT, sound_state, 0, error_code)) {
+		if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subevent, ASM_REQUEST_SET_SUBEVENT, sound_state, 0, error_code)) {
 			debug_error("failed to __asm_construct_snd_msg() for ASM_SUB_EVENT_NONE, error(%d)", *error_code);
 			return false;
 		}
 	} else if (subevent < ASM_SUB_EVENT_MAX) {
 		sound_state = ASM_STATE_PLAYING;
-		if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subevent, ASM_REQUEST_SET_SUBEVENT, sound_state, 0, error_code)) {
+		if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, subevent, ASM_REQUEST_SET_SUBEVENT, sound_state, 0, error_code)) {
 			debug_error("failed to __asm_construct_snd_msg() for ASM_SUB_EVENT(%d), error(%d)", subevent, *error_code);
 			return false;
 		}
@@ -1860,8 +1902,10 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1872,10 +1916,12 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 		return true;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -1896,7 +1942,7 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 			asm_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 			if (asm_index == -1) {
 				*error_code = ERR_ASM_LOCAL_HANDLE_IS_INVALID;
-				debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+				debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 				return false;
 			}
 
@@ -1920,7 +1966,7 @@ bool ASM_set_subevent (const int asm_handle, ASM_sound_sub_events_t subevent, in
 			asm_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 			if (asm_index == -1) {
 				*error_code = ERR_ASM_LOCAL_HANDLE_IS_INVALID;
-				debug_error("Can not find index from instance_id %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+				debug_error("Can not find index from instance_id %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 				return false;
 			}
 
@@ -1953,6 +1999,8 @@ bool ASM_get_subevent (const int asm_handle, ASM_sound_sub_events_t *subevent, i
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -1981,7 +2029,7 @@ bool ASM_get_subevent (const int asm_handle, ASM_sound_sub_events_t *subevent, i
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SUBEVENT, 0, 0, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SUBEVENT, 0, 0, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
@@ -1989,15 +2037,19 @@ bool ASM_get_subevent (const int asm_handle, ASM_sound_sub_events_t *subevent, i
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -2023,6 +2075,8 @@ bool ASM_set_session_option (const int asm_handle, int option_flags, int *error_
 	int asm_index = 0;
 	int ret = 0;
 	ASM_sound_states_t sound_state = ASM_STATE_NONE;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -2051,22 +2105,26 @@ bool ASM_set_session_option (const int asm_handle, int option_flags, int *error_
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, option_flags, ASM_REQUEST_SET_SESSION_OPTIONS, sound_state, 0, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, option_flags, ASM_REQUEST_SET_SESSION_OPTIONS, sound_state, 0, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg() for option_flags, error(%d)", *error_code);
 		return false;
 	}
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -2087,7 +2145,7 @@ bool ASM_set_session_option (const int asm_handle, int option_flags, int *error_
 			asm_index = __ASM_find_index_by_handle(asm_rcv_msg.data.cmd_handle);
 			if (asm_index == -1) {
 				*error_code = ERR_ASM_LOCAL_HANDLE_IS_INVALID;
-				debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.instance_id, asm_rcv_msg.data.cmd_handle);
+				debug_error( "Can not find index from instance_id %ld, handle %d", asm_rcv_msg.msg_id, asm_rcv_msg.data.cmd_handle);
 				return false;
 			}
 
@@ -2123,6 +2181,8 @@ bool ASM_get_session_option (const int asm_handle, int *option_flags, int *error
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -2151,22 +2211,26 @@ bool ASM_get_session_option (const int asm_handle, int *option_flags, int *error
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SESSION_OPTIONS, 0, 0, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_GET_SESSION_OPTIONS, 0, 0, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -2201,6 +2265,8 @@ bool ASM_reset_resumption_info(const int asm_handle, int *error_code)
 	int handle = 0;
 	int asm_index = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
+	ASM_msg_asm_to_lib_t asm_rcv_msg;
 
 	debug_fenter();
 
@@ -2223,22 +2289,26 @@ bool ASM_reset_resumption_info(const int asm_handle, int *error_code)
 		return false;
 	}
 
-	if (!__asm_construct_snd_msg(ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_RESET_RESUME_TAG, 0, 0, error_code)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, ASM_sound_handle[asm_index].asm_tid, ASM_sound_handle[asm_index].handle, 0, ASM_REQUEST_RESET_RESUME_TAG, 0, 0, error_code)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", *error_code);
 		return false;
 	}
 
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_SND_ERROR;
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return false;
 	}
 
-	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].asm_tid, 0));
+	NO_EINTR(ret = msgrcv(asm_rcv_msgid, (void *)&asm_rcv_msg, sizeof(asm_rcv_msg.data), ASM_sound_handle[asm_index].handle, 0));
 	if (ret == -1) {
+		char str_error[256];
 		*error_code = ERR_ASM_MSG_QUEUE_RCV_ERROR;
-		debug_error("failed to msgrcv(%d,%s)", errno, strerror(errno));
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgrcv(%d,%s)", errno, str_error);
 		return false;
 	}
 
@@ -2268,21 +2338,23 @@ void ASM_dump_sound_state()
 {
 	int error = 0;
 	int ret = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
 
 	if (!__ASM_init_msg(&error) ) {
 		debug_error("failed to __ASM_init_msg(), error(%d)", error);
 	}
-	if (!__asm_construct_snd_msg(getpid(), 0, 0, ASM_REQUEST_DUMP, ASM_STATE_NONE, ASM_RESOURCE_NONE, &error)) {
+	if (!__asm_construct_snd_msg(&asm_snd_msg, getpid(), 0, 0, ASM_REQUEST_DUMP, ASM_STATE_NONE, ASM_RESOURCE_NONE, &error)) {
 		debug_error("failed to __asm_construct_snd_msg(), error(%d)", error);
 		return;
 	}
 	NO_EINTR(ret = msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0));
 	if (ret == -1) {
-		debug_error("failed to msgsnd(%d,%s)", errno, strerror(errno));
+		char str_error[256];
+		strerror_r(errno, str_error, sizeof(str_error));
+		debug_error("failed to msgsnd(%d,%s)", errno, str_error);
 		return;
 	}
 }
-
 
 #if defined(CONFIG_ENABLE_SIGNAL_HANDLER)
 struct sigaction ASM_int_old_action;
@@ -2296,6 +2368,10 @@ void __ASM_signal_handler(int signo)
 {
 	int exit_pid = 0;
 	int asm_index = 0;
+	int instance_id = -1;
+	char* filename = NULL;
+	char str_error[256];
+	ASM_msg_lib_to_asm_t asm_snd_msg;
 
 	debug_warning("ENTER, sig.num(%d)",signo);
 
@@ -2304,21 +2380,36 @@ void __ASM_signal_handler(int signo)
 	sigfillset(&all_mask);
 	sigprocmask(SIG_BLOCK, &all_mask, &old_mask);
 
+	instance_id = asmgettid();
+	filename = g_strdup_printf("/tmp/mm_session_%d", instance_id);
+	if (!remove(filename)) {
+		debug_log(" remove %s success\n", filename);
+	} else {
+		strerror_r (errno, str_error, sizeof (str_error));
+		debug_error(" remove %s failed with %s\n", filename, str_error);
+	}
+
+	g_free(filename);
+
 	for (asm_index=0 ;asm_index < ASM_HANDLE_MAX; asm_index++) {
 		if (ASM_sound_handle[asm_index].is_used == true &&
 				ASM_sound_handle[asm_index].is_for_watching == false) {
 			exit_pid = ASM_sound_handle[asm_index].asm_tid;
-			if (exit_pid == asmgettid()) {
-				asm_snd_msg.instance_id = exit_pid;
+			if (exit_pid == instance_id) {
+				asm_snd_msg.msg_id = exit_pid;
 				asm_snd_msg.data.handle = ASM_sound_handle[asm_index].handle;
 				asm_snd_msg.data.request_id = ASM_REQUEST_EMERGENT_EXIT;
 				asm_snd_msg.data.sound_event = ASM_sound_handle[asm_index].sound_event;
 				asm_snd_msg.data.sound_state = ASM_sound_handle[asm_index].sound_state;
 
 				if (msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0) < 0 ) {
-					debug_msg( "msgsnd() failed, tid=%ld, reqid=%d, handle=0x%x, state=0x%x event=%d size=%d",asm_snd_msg.instance_id,
+					debug_msg( "msgsnd() failed, tid=%ld, reqid=%d, handle=0x%x, state=0x%x event=%d size=%d",asm_snd_msg.msg_id,
 							asm_snd_msg.data.request_id, asm_snd_msg.data.handle, asm_snd_msg.data.sound_state, asm_snd_msg.data.sound_event, sizeof(asm_snd_msg.data) );
 					int tmpid = msgget((key_t)2014, 0666);
+					if (tmpid < 0) {
+						debug_error("msgget() is failed");
+						continue;
+					}
 					if (msgsnd(tmpid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0) > 0) {
 						debug_warning("msgsnd() succeed");
 					} else {
@@ -2401,22 +2492,27 @@ void __attribute__((destructor)) __ASM_fini_module(void)
 
 	int exit_pid = 0;
 	int asm_index = 0;
+	ASM_msg_lib_to_asm_t asm_snd_msg;
 
 	for (asm_index = 0; asm_index < ASM_HANDLE_MAX; asm_index++) {
 		if (ASM_sound_handle[asm_index].is_used == true &&
 				ASM_sound_handle[asm_index].is_for_watching == false) {
 			exit_pid = ASM_sound_handle[asm_index].asm_tid;
 			if (exit_pid == asmgettid()) {
-				asm_snd_msg.instance_id = exit_pid;
+				asm_snd_msg.msg_id = exit_pid;
 				asm_snd_msg.data.handle = ASM_sound_handle[asm_index].handle;
 				asm_snd_msg.data.request_id = ASM_REQUEST_EMERGENT_EXIT;
 				asm_snd_msg.data.sound_event = ASM_sound_handle[asm_index].sound_event;
 				asm_snd_msg.data.sound_state = ASM_sound_handle[asm_index].sound_state;
 
 				if (msgsnd(asm_snd_msgid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0) < 0 ) {
-					debug_msg( "msgsnd() failed, tid=%ld, reqid=%d, handle=0x%x, state=0x%x event=%d size=%d",asm_snd_msg.instance_id,
+					debug_msg( "msgsnd() failed, tid=%ld, reqid=%d, handle=0x%x, state=0x%x event=%d size=%d",asm_snd_msg.msg_id,
 							asm_snd_msg.data.request_id, asm_snd_msg.data.handle, asm_snd_msg.data.sound_state, asm_snd_msg.data.sound_event, sizeof(asm_snd_msg.data) );
 					int tmpid = msgget((key_t)2014, 0666);
+					if (tmpid < 0) {
+						debug_error("msgget() is failed");
+						continue;
+					}
 					if (msgsnd(tmpid, (void *)&asm_snd_msg, sizeof(asm_snd_msg.data), 0) > 0) {
 						debug_warning("msgsnd() succeed");
 					} else {

@@ -1,9 +1,9 @@
 /*
  * audio-session-manager
  *
- * Copyright (c) 2000 - 2013 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2015 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Seungbae Shin <seungbae.shin at samsung.com>, Sangchul Lee <sc11.lee at samsung.com>
+ * Contact: Sangchul Lee <sc11.lee at samsung.com>, Inhyeok Kim <i_bc.kim at samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,6 +72,7 @@
 #define ASM_HANDLE_INIT_VAL -1
 
 #define SOUND_STATUS_KEY		"memory/Sound/SoundStatus"
+
 /**
   * This enumeration defines sound request.
   */
@@ -172,7 +173,7 @@ typedef enum
 	ASM_CASE_1PAUSE_2PLAY,
 	ASM_CASE_1PLAY_2PLAY_MIX,
 	ASM_CASE_RESOURCE_CHECK,
-	ASM_CASE_SUB_EVENT,
+	ASM_CASE_SUB_EVENT
 } ASM_sound_cases_t;
 
 
@@ -234,7 +235,7 @@ typedef enum
 	ASM_CB_RES_NONE     = 0,
 	ASM_CB_RES_PLAYING  = 1,
 	ASM_CB_RES_STOP     = 2,
-	ASM_CB_RES_PAUSE    = 3,
+	ASM_CB_RES_PAUSE    = 3
 }ASM_cb_result_t;
 
 /*
@@ -251,7 +252,7 @@ typedef enum
 	ASM_RESOURCE_HW_ENCODER     = 0x0200,
 	ASM_RESOURCE_RADIO_TUNNER   = 0x1000,
 	ASM_RESOURCE_TV_TUNNER      = 0x2000,
-	ASM_RESOURCE_VOICECONTROL   = 0x10000,
+	ASM_RESOURCE_VOICECONTROL   = 0x10000
 }ASM_resource_t;
 
 
@@ -262,7 +263,7 @@ typedef enum
 	ASM_COMMAND_PLAY   = 2,
 	ASM_COMMAND_STOP   = 3,
 	ASM_COMMAND_PAUSE  = 4,
-	ASM_COMMAND_RESUME = 5,
+	ASM_COMMAND_RESUME = 5
 } ASM_sound_commands_t;
 
 /**
@@ -305,8 +306,8 @@ typedef struct
   */
 typedef struct
 {
-	long int                    	instance_id;
-	__ASM_msg_data_lib_to_asm_t    data;
+	long int                      msg_id;
+	__ASM_msg_data_lib_to_asm_t   data;
 } ASM_msg_lib_to_asm_t;
 
 /**
@@ -314,19 +315,9 @@ typedef struct
   */
 typedef struct
 {
-	long int                        instance_id;
-	__ASM_msg_data_asm_to_lib_t	data;
+	long int                      msg_id;
+	__ASM_msg_data_asm_to_lib_t   data;
 } ASM_msg_asm_to_lib_t;
-
-/**
-  * This structure defines the message from conflict manager to library.
-  */
-typedef struct
-{
-	long int            			instance_id;
-	__ASM_msg_data_asm_to_cb_t     data;
-} ASM_msg_asm_to_cb_t;
-
 
 typedef struct
 {

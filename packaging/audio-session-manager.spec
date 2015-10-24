@@ -1,6 +1,6 @@
 Name:       audio-session-manager
 Summary:    Audio Session Manager
-Version:    0.4.8
+Version:    0.4.23
 Release:    0
 Group:      System/Libraries
 License:    Apache-2.0
@@ -55,8 +55,6 @@ rm -rf %{buildroot}
 
 %post 
 /sbin/ldconfig
-
-vconftool set -t int memory/Sound/SoundStatus "0" -i -s system::vconf_multimedia
 
 %postun 
 /sbin/ldconfig
